@@ -40,10 +40,18 @@ public:
     void SetCamera         (glm::vec3 pos, glm::vec3 lookAt, glm::vec3 up);
     int  SetPerspectiveView(float fov, float ar, float nearP, float farP);
 
+    void ZoomIn (float amount);
+    void ZoomOut(float amount);
+    void ChangeForwardVector(float x, float y, float z);
+
 private:
     glm::vec3 position, upVector, forwardVector;
     glm::quat orientation_;
     float fieldOfView, aspectRatio, nearPlane, farPlane;
+
+    // Cached matrices (professor convention)
+    glm::mat4 viewMat;
+    glm::mat4 projMat;
 };
 
 #endif
