@@ -10,6 +10,7 @@ in vec3 fragNormal;
 in vec3 fragColor;
 in vec2 fragTexCoord;
 in float fragDepth;
+in vec4 fragPosLightSpace;     // shadow-map coordinate
 
 // ---- Material (professor convention) ----
 uniform vec3  ambient_color;
@@ -67,6 +68,11 @@ uniform float time;
 // ---- Texture ----
 uniform int   hasTexture;
 uniform sampler2D tex;
+
+// ---- Shadow mapping ----
+uniform sampler2D shadowMap;
+uniform int       shadowOn;
+uniform float     shadowBias;
 
 out vec4 fragOutput;
 
@@ -154,6 +160,45 @@ float rainShimmer(){
     return h * 0.15;
 }
 
+// ---------------------------------------------------------------------------
+//  PCF Shadow calculation
+//  Returns 0.0 = fully in shadow, 1.0 = fully lit
+// ---------------------------------------------------------------------------
+float ShadowFactor(vec4 posLightSpace, vec3 N, vec3 L){
+    if(shadowOn == 0) return 1.0;
+
+    // Perspective divide -> NDC [-1,1]
+    vec3 projCoords = posLightSpace.xyz / posLightSpace.w;
+    // Map to [0,1] for texture sampling
+    projCoords = projCoords * 0.5 + 0.5;
+
+    // Fragment is outside the shadow frustum -- treat as lit
+    if(projCoords.x < 0.0 || projCoords.x > 1.0 ||
+       projCoords.y < 0.0 || projCoords.y > 1.0 ||
+       projCoords.z > 1.0)
+        return 1.0;
+
+    float currentDepth = projCoords.z;
+
+    // Slope-scale bias to fight shadow acne on steep surfaces
+    float cosAngle = max(dot(N, L), 0.0);
+    float bias = max(shadowBias * (1.0 - cosAngle), shadowBias * 0.1);
+
+    // 3x3 PCF (Percentage Closer Filtering) for soft edges
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+    for(int x = -1; x <= 1; x++){
+        for(int y = -1; y <= 1; y++){
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0;
+        }
+    }
+    shadow /= 9.0;
+
+    // Keep a small ambient term in shadow so night city doesn't go pitch black
+    return 1.0 - shadow * 0.65;
+}
+
 void main(){
     vec3 N = normalize(fragNormal);
     vec3 V = normalize(-fragPos);
@@ -187,7 +232,15 @@ void main(){
     lighting += headlightContrib(N, V, baseColor);
     lighting += baseColor * rainShimmer();
 
-    vec3 litColor   = ambient * baseColor + lighting;
+    // Compute a single dominant-light direction for shadow bias (use first active light)
+    vec3 shadowL = vec3(0.0, 1.0, 0.0);
+    if(numLights > 0){
+        vec3 Lp0 = vec3(view_mat * vec4(lightPos[0], 1.0));
+        shadowL  = normalize(Lp0 - fragPos);
+    }
+    float sf = ShadowFactor(fragPosLightSpace, N, shadowL);
+
+    vec3 litColor   = ambient * baseColor + lighting * sf;
     float ff        = fogFactor(fragDepth);
     fragOutput      = vec4(mix(fogColor, litColor, ff), 1.0);
 }

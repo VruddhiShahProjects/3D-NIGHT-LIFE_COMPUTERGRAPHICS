@@ -5,6 +5,7 @@ Renderer implementation: shaders, mesh builders, draw calls
 =============================================================================
 */
 #include <renderer.h>
+#include <scene.h>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -267,6 +268,16 @@ void SetCityUniforms(GLuint prog, glm::mat4 world,
         U1fv(prog, "lightRadius",    cnt, radArr);
     }
     UM4(prog, "view_mat", view);
+
+    // Shadow mapping uniforms
+    UM4(prog, "lightSpaceMatrix", g_lightSpaceMatrix);
+    U1i(prog, "shadowOn",   g_shadowOn ? 1 : 0);
+    U1f(prog, "shadowBias", 0.003f);
+    // Bind shadow map to texture unit 1 (unit 0 is used by the road texture)
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, g_shadowMap);
+    U1i(prog, "shadowMap", 1);
+    glActiveTexture(GL_TEXTURE0);
 }
 
 // ---------------------------------------------------------------------------
@@ -294,4 +305,100 @@ void DrawShaft(Mesh* m, glm::mat4 world, glm::vec3 col, float alpha) {
     glDrawElements(GL_TRIANGLES, m->indexCount, GL_UNSIGNED_INT, 0);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+}
+
+// ---------------------------------------------------------------------------
+//  Shadow Map Setup
+// ---------------------------------------------------------------------------
+void InitShadowMap() {
+    // Create the depth texture
+    glGenTextures(1, &g_shadowMap);
+    glBindTexture(GL_TEXTURE_2D, g_shadowMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+                 SHADOW_MAP_SIZE, SHADOW_MAP_SIZE,
+                 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // Clamp to border so anything outside the shadow frustum is treated as lit
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    // Create the framebuffer and attach the depth texture
+    glGenFramebuffers(1, &g_shadowFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_shadowFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                           GL_TEXTURE_2D, g_shadowMap, 0);
+    // No colour attachment — depth only
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        throw std::runtime_error("Shadow map FBO incomplete");
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+// ---------------------------------------------------------------------------
+//  Depth-only draw (shadow casters)
+//  Call this after binding g_shadowFBO and setting the viewport.
+// ---------------------------------------------------------------------------
+void DrawSceneDepth(glm::mat4 lightSpaceMat) {
+    glUseProgram(g_shShadow);
+    glm::mat4 I(1.f);
+
+    auto depthMesh = [&](Mesh* m, glm::mat4 world) {
+        UM4(g_shShadow, "lightSpaceMatrix", lightSpaceMat);
+        UM4(g_shShadow, "world_mat", world);
+        // Bind only the vertex position attribute
+        glBindVertexArray(m->vao);
+        glBindBuffer(GL_ARRAY_BUFFER, m->vbo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m->ibo);
+        GLint va = glGetAttribLocation(g_shShadow, "vertex");
+        if (va >= 0) {
+            glVertexAttribPointer(va, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+            glEnableVertexAttribArray(va);
+        }
+        glDrawElements(GL_TRIANGLES, m->indexCount, GL_UNSIGNED_INT, 0);
+    };
+
+    // Road
+    depthMesh(g_road, I);
+
+    // Buildings
+    for (int i = 0; i < (int)g_buildings.size() && i < (int)g_buildingDefs.size(); i++) {
+        auto& d = g_buildingDefs[i];
+        depthMesh(g_buildings[i], glm::translate(I, glm::vec3(d.x, 0.f, d.z)));
+    }
+
+    // Lamp posts & heads
+    {
+        float lampZ[] = {-200,-140,-80,-20,40,100,160,200};
+        float sides[] = {-75.f, 75.f};
+        for (float sx : sides) {
+            for (float sz : lampZ) {
+                depthMesh(g_streetLampPost, glm::translate(I, glm::vec3(sx, 0.f, sz)));
+                depthMesh(g_lampHead,       glm::translate(I, glm::vec3(sx, 20.5f, sz)));
+            }
+        }
+    }
+
+    // Traffic light poles
+    {
+        float px[] = {-78, 78, -78, 78};
+        float pz[] = { -5, -5,   5,  5};
+        for (int i = 0; i < 4; i++)
+            depthMesh(g_trafficLight, glm::translate(I, glm::vec3(px[i], 0.f, pz[i])));
+    }
+
+    // Vehicles
+    for (auto& v : g_vehicles) {
+        float angle = atan2f(v.dir.x, v.dir.z);
+        glm::mat4 wv = glm::translate(I, v.pos + glm::vec3(0, 1.25f, 0));
+        wv = glm::rotate(wv, angle, glm::vec3(0, 1, 0));
+        depthMesh(g_carBody, wv);
+        depthMesh(g_carTop,  glm::translate(wv, glm::vec3(0, 2.5f, 0.5f)));
+    }
 }

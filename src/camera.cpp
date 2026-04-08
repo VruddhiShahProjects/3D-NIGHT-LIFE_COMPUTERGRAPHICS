@@ -2,23 +2,16 @@
 COSC 3307 - 3D Night Life Project
 Camera implementation
 */
-
-// Force GLM to use radians 
-
 #define GLM_FORCE_RADIANS
 #include <camera.h>
 
-// Constructor : initializes camera with default values
-
 Camera::Camera(void)
-    : position(0,0,0), forwardVector(0,0,1), upVector(0,1,0),                 // Camera starts at origin (0,0,0),Default looking direction (forward)
-      fieldOfView(60.f), aspectRatio(800.f/600.f), nearPlane(0.01f), farPlane(5000.f)  //Camera view angle (60 degrees)
+    : position(0,0,0), forwardVector(0,0,1), upVector(0,1,0),
+      fieldOfView(60.f), aspectRatio(800.f/600.f), nearPlane(0.01f), farPlane(5000.f)
 {
-    orientation_ = glm::quat();    // No rotation initially 
+    orientation_ = glm::quat();
 }
 Camera::~Camera(void){}
-
-// Roll : tilt camera sideways 
 
 int Camera::Roll(float deg){
     orientation_ = glm::normalize(glm::angleAxis(glm::radians(deg), GetForward()) * orientation_);
@@ -46,7 +39,6 @@ glm::vec3 Camera::GetForward() const { return glm::normalize(orientation_ * forw
 glm::vec3 Camera::GetSide()    const { return glm::normalize(glm::cross(GetForward(), GetUp())); }
 glm::vec3 Camera::GetUp()      const { return glm::normalize(orientation_ * upVector); }
 
-//create view matrix
 glm::mat4 Camera::GetViewMatrix(glm::mat4* out){
     glm::mat4 m = glm::lookAt(position, GetLookAtPoint(), GetUp());
     if(out) *out = m;
@@ -57,7 +49,6 @@ glm::mat4 Camera::GetProjectionMatrix(glm::mat4* out){
     if(out) *out = m;
     return m;
 }
-// manually camera
 void Camera::SetCamera(glm::vec3 pos, glm::vec3 look, glm::vec3 up){
     position      = pos;
     forwardVector = glm::normalize(look - pos);

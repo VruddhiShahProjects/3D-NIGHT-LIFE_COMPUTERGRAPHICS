@@ -11,6 +11,13 @@ Camera* g_cam = nullptr;
 GLuint g_shCity     = 0;
 GLuint g_shShaft    = 0;
 GLuint g_shParticle = 0;
+GLuint g_shShadow   = 0;
+
+// Shadow mapping
+GLuint     g_shadowFBO        = 0;
+GLuint     g_shadowMap        = 0;
+glm::mat4  g_lightSpaceMatrix = glm::mat4(1.f);
+bool       g_shadowOn         = true;
 
 GLuint g_roadTexture = 0;  // T8 road texture
 

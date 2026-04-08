@@ -38,3 +38,7 @@ void SetCityUniforms(GLuint prog, glm::mat4 world,
                      glm::vec3 emCol, float emStr, int hasTexture);
 void DrawMesh(Mesh* m, GLuint prog);
 void DrawShaft(Mesh* m, glm::mat4 world, glm::vec3 col, float alpha);
+
+// Shadow mapping
+void InitShadowMap();
+void DrawSceneDepth(glm::mat4 lightSpaceMat);   // depth pass (shadow casters only)

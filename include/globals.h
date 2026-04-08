@@ -72,6 +72,14 @@ extern Camera* g_cam;
 extern GLuint g_shCity;
 extern GLuint g_shShaft;
 extern GLuint g_shParticle;
+extern GLuint g_shShadow;       // depth-only shadow pass shader
+
+// Shadow mapping
+extern GLuint     g_shadowFBO;
+extern GLuint     g_shadowMap;
+extern glm::mat4  g_lightSpaceMatrix;
+extern bool       g_shadowOn;
+static const int  SHADOW_MAP_SIZE = 2048;
 
 // Textures (T8)
 extern GLuint g_roadTexture;
@@ -132,4 +140,4 @@ extern std::vector<unsigned int> g_itmp;
 // Window
 static const int   WIN_W     = 1024;
 static const int   WIN_H     = 768;
-static const char* WIN_TITLE = "COSC 3307 - 3D Night Life  |  W/S/A/D/Arrows-camera  |  F/f fog  |  P pause  |  T rain  |  ESC quit";
+static const char* WIN_TITLE = "COSC 3307 - 3D Night Life  |  W/S/A/D/Arrows-camera  |  F/f fog  |  P pause  |  T rain  |  C cinematic  |  ESC quit";

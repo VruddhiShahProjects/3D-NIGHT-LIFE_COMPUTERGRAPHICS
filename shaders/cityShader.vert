@@ -15,10 +15,12 @@ out vec3 fragNormal;
 out vec3 fragColor;
 out vec2 fragTexCoord;
 out float fragDepth;
+out vec4 fragPosLightSpace;   // shadow-map coordinate
 
 uniform mat4 projection_mat;
 uniform mat4 view_mat;
 uniform mat4 world_mat;
+uniform mat4 lightSpaceMatrix; // orthographic light VP
 
 void main(){
     vec4 worldPos  = world_mat * vec4(vertex, 1.0);
@@ -31,6 +33,9 @@ void main(){
     fragNormal   = normalize(NM * normal);
     fragColor    = color;
     fragTexCoord = texCoord;
+
+    // Position in light clip-space (used to sample the shadow map)
+    fragPosLightSpace = lightSpaceMatrix * worldPos;
 
     gl_Position  = projection_mat * viewPos;
 }

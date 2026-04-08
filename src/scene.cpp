@@ -14,7 +14,6 @@ Scene implementation
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-// Mesh-  generated -Define buildin using  position ,  width ,height,color and,..
 std::vector<BuildingDef> g_buildingDefs = {
     {-160.f,-200.f,45.f,120.f,45.f,glm::vec3(0.20f,0.20f,0.30f)},
     {-210.f,-200.f,40.f, 80.f,40.f,glm::vec3(0.15f,0.18f,0.22f)},
@@ -108,13 +107,17 @@ void CreateTrafficLights() {
 
 void CreateVehicles() {
     struct VDef { glm::vec3 pos; glm::vec3 dir; glm::vec3 col; float speed; float t; };
+    // Lane length ~520 (z:-260 to +260). 3 cars per lane spaced ~173 units apart
+    // so no two cars start within merging distance of each other.
     std::vector<VDef> vd = {
-        {{-30.f,0.f,-250.f},{0.f,0.f, 1.f},{0.8f,0.2f,0.2f},90.f,0.00f},
-        {{-30.f,0.f, -90.f},{0.f,0.f, 1.f},{0.2f,0.4f,0.8f},70.f,0.30f},
-        {{-30.f,0.f,  80.f},{0.f,0.f, 1.f},{0.8f,0.7f,0.2f},80.f,0.60f},
-        {{ 30.f,0.f, 250.f},{0.f,0.f,-1.f},{0.3f,0.7f,0.3f},75.f,0.00f},
-        {{ 30.f,0.f,  90.f},{0.f,0.f,-1.f},{0.8f,0.4f,0.1f},85.f,0.40f},
-        {{ 30.f,0.f, -80.f},{0.f,0.f,-1.f},{0.5f,0.2f,0.7f},65.f,0.70f},
+        // Lane A: x=-30, travelling +Z
+        {{-30.f,0.f,-240.f},{0.f,0.f, 1.f},{0.8f,0.2f,0.2f},90.f,0.00f},
+        {{-30.f,0.f, -67.f},{0.f,0.f, 1.f},{0.2f,0.4f,0.8f},70.f,0.33f},
+        {{-30.f,0.f, 107.f},{0.f,0.f, 1.f},{0.8f,0.7f,0.2f},80.f,0.67f},
+        // Lane B: x=+30, travelling -Z
+        {{ 30.f,0.f, 240.f},{0.f,0.f,-1.f},{0.3f,0.7f,0.3f},75.f,0.00f},
+        {{ 30.f,0.f,  67.f},{0.f,0.f,-1.f},{0.8f,0.4f,0.1f},85.f,0.33f},
+        {{ 30.f,0.f,-107.f},{0.f,0.f,-1.f},{0.5f,0.2f,0.7f},65.f,0.67f},
     };
     for (auto& v : vd) {
         Vehicle vh;
@@ -237,11 +240,47 @@ void InitScene() {
 void Update(float dt) {
     if (g_paused) return;
     g_time += dt;
+    // ---------------------------------------------------------------------------
+    //  Vehicle collision avoidance — prevent cars on the same lane from merging.
+    //  Each car checks every other car on the same lane (same X ± tolerance and
+    //  same direction).  If a car is within MIN_GAP ahead, this car's effective
+    //  speed is blended down so it trails at a safe distance.
+    // ---------------------------------------------------------------------------
+    const float LANE_TOL   = 4.f;    // X-distance to consider "same lane"
+    const float CAR_LEN    = 18.f;   // car length + small bumper margin
+    const float MIN_GAP    = CAR_LEN;
+    const float BRAKE_ZONE = MIN_GAP * 3.f; // start easing at 3× gap
+
     for (auto& v : g_vehicles) {
-        float spd = v.speed * g_vehicleSpeed;
-        v.t += (spd * dt) / v.routeLen;
+        float baseSpd = v.speed * g_vehicleSpeed;
+        float effSpd  = baseSpd;
+
+        for (auto& other : g_vehicles) {
+            if (&other == &v) continue;
+
+            // Same lane: close X, same forward direction
+            if (fabsf(other.pos.x - v.pos.x) > LANE_TOL) continue;
+            if (glm::dot(v.dir, other.dir) < 0.5f)        continue;
+
+            // "Ahead" = other is further along v.dir from v
+            float ahead = glm::dot(other.pos - v.pos, v.dir);
+            if (ahead <= 0.f) continue;
+
+            // Ignore wrap-around ghosts (gap > half route length)
+            if (ahead > v.routeLen * 0.5f) continue;
+
+            if (ahead < BRAKE_ZONE) {
+                // Blend speed: full at BRAKE_ZONE, match leader at MIN_GAP, stop if closer
+                float t       = (ahead - MIN_GAP) / (BRAKE_ZONE - MIN_GAP);
+                t             = glm::clamp(t, 0.f, 1.f);
+                float cappedSpd = other.speed * g_vehicleSpeed * t;
+                effSpd = glm::min(effSpd, glm::max(cappedSpd, 0.f));
+            }
+        }
+
+        v.t += (effSpd * dt) / v.routeLen;
         if (v.t > 1.f) v.t -= 1.f;
-        v.pos += v.dir * spd * dt;
+        v.pos += v.dir * effSpd * dt;
         if (v.pos.z >  260.f) v.pos.z = -260.f;
         if (v.pos.z < -260.f) v.pos.z =  260.f;
     }
